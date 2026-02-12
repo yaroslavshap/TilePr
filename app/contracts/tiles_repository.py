@@ -1,3 +1,5 @@
+# app/contracts/tiles_repository.py
+
 from __future__ import annotations
 from typing import Protocol, BinaryIO, Tuple, Optional
 from app.domain.tiles import TileFormat
@@ -18,3 +20,5 @@ class TileRepository(Protocol):
 class ManifestRepository(Protocol):
     def put_manifest(self, uuid: str, manifest_json: bytes) -> str: ...
     def get_manifest(self, uuid: str) -> Optional[bytes]: ...
+
+

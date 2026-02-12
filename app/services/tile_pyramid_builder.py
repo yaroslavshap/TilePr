@@ -1,11 +1,13 @@
+# app/services/tile_pyramid_builder.py
+
 from __future__ import annotations
 import math
 import json
-from typing import List, Tuple
+from typing import List
 from PIL import Image
 
 from app.domain.tiles import TileManifest, LevelInfo, TileFormat
-from app.contracts.tile_repository import TileRepository, ManifestRepository
+from app.contracts.tiles_repository import TileRepository, ManifestRepository
 
 class TilePyramidBuilder:
     def __init__(self, tile_repo: TileRepository, manifest_repo: ManifestRepository):
@@ -27,25 +29,22 @@ class TilePyramidBuilder:
         levels: List[Image.Image] = []
         cur = image
         levels.append(cur)
-        print("1")
-
 
         while max(cur.width, cur.height) > tile_size:
             new_w = max(1, (cur.width + 1) // 2)
             new_h = max(1, (cur.height + 1) // 2)
             cur = cur.resize((new_w, new_h), resample=Image.Resampling.LANCZOS)
             levels.append(cur)
-        print("2")
 
         # Now levels are from original -> smaller. Reverse so z=0 is top
         levels = list(reversed(levels))
-        print("3")
-        print("levels = ", levels)
+        print("levels = ", len(levels))
 
         manifest_levels = {}
 
         # 3) Cut & save tiles for each level
         for z, lvl_img in enumerate(levels):
+            print("\n\n\nz = ", z)
             tiles_x = math.ceil(lvl_img.width / tile_size)
             tiles_y = math.ceil(lvl_img.height / tile_size)
 
@@ -56,19 +55,17 @@ class TilePyramidBuilder:
                 tiles_x=tiles_x,
                 tiles_y=tiles_y,
             )
-            print("4")
 
             for y in range(tiles_y):
+                print("y - ", y)
                 for x in range(tiles_x):
+                    print("x - ", x)
                     left = x * tile_size
                     upper = y * tile_size
                     right = min(left + tile_size, lvl_img.width)
                     lower = min(upper + tile_size, lvl_img.height)
-                    print("5")
 
                     tile = lvl_img.crop((left, upper, right, lower))
-                    print("6")
-
 
                     # pad to full tile_size
                     if tile.size != (tile_size, tile_size):
@@ -76,11 +73,11 @@ class TilePyramidBuilder:
                         canvas.paste(tile, (0, 0))
                         tile = canvas
 
-                    print("7")
-
                     data = self._encode(tile, fmt=fmt, lossless=lossless)
-                    self.tile_repo.put_tile(uuid, z, y, x, data, fmt=fmt)
-                    print("8")
+                    # data = tile.tobytes()
+                    # data = b''
+                    # data = os.urandom(601 * 1024)
+                    self.tile_repo.put_tile(uuid, z, y, x, data=data, fmt=fmt)
 
         manifest = TileManifest(
             uuid=uuid,
@@ -102,7 +99,8 @@ class TilePyramidBuilder:
             tile.save(buf, format="PNG", optimize=False)
         else:
             # WebP lossless
-            tile.save(buf, format="WEBP", lossless=lossless, quality=100, method=6)
+            print(tile)
+            tile.save(buf, format="WEBP", lossless=lossless, quality=100, method=3)
         return buf.getvalue()
 
     def _manifest_to_json(self, manifest: TileManifest) -> bytes:

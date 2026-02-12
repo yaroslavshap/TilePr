@@ -14,7 +14,7 @@ from app.domain.tiles import TileFormat
 
 import tempfile, os
 
-router = APIRouter(prefix="/tiles", tags=["Tiles · Pyramid & Access"])
+tiles_router = APIRouter(prefix="/tiles", tags=["TILES"])
 
 
 def _stream_minio(resp):
@@ -32,7 +32,7 @@ def _stream_minio(resp):
             pass
 
 
-@router.post("/{uuid}/build")
+@tiles_router.post("/{uuid}/build")
 def build_tiles(
     uuid: str,
     tile_size: int = Query(256, description="256 or 512"),
@@ -71,7 +71,7 @@ def build_tiles(
         with Image.open(tmp_path) as im:
             im.load()
             print("im.size", im.size)
-            manifest = builder.build(uuid=uuid, image=im, tile_size=tile_size, fmt=fmt, lossless=True)
+            manifest = builder.build(uuid=uuid, image=im, tile_size=tile_size, fmt=fmt, lossless=False)
 
         return {
             "uuid": manifest.uuid,
@@ -96,7 +96,7 @@ def build_tiles(
                 pass
 
 
-@router.get("/{uuid}/{z}/{y}/{x}")
+@tiles_router.get("/{uuid}/{z}/{y}/{x}")
 def get_tile(
     uuid: str,
     z: int,
@@ -140,3 +140,77 @@ def get_tile(
 
     # FS stream
     return StreamingResponse(stream, media_type=media)
+
+
+
+@tiles_router.get("/{uuid}/manifest")
+def admin_get_manifest(uuid: str, repo=Depends(get_tile_repo)):
+    data = repo.get_manifest(uuid)
+    if not data:
+        raise HTTPException(status_code=404, detail="Manifest not found")
+    return json.loads(data.decode("utf-8"))
+
+
+@tiles_router.delete("/{uuid}/{z}/{y}/{x}")
+def admin_delete_one_tile(
+    uuid: str,
+    z: int,
+    y: int,
+    x: int,
+    fmt: str | None = Query(default=None, description="Override format (webp/png). If not set, uses manifest."),
+    repo=Depends(get_tile_repo),
+):
+    """
+    Удалить один тайл.
+    Если fmt не задан — берём формат из manifest.json
+    """
+    if fmt is None:
+        man_bytes = repo.get_manifest(uuid)
+        if not man_bytes:
+            raise HTTPException(status_code=404, detail="Manifest not found (cannot infer format)")
+        try:
+            man = json.loads(man_bytes.decode("utf-8"))
+            fmt = man["format"]
+        except Exception:
+            raise HTTPException(status_code=500, detail="Corrupted manifest")
+
+    if fmt not in ("webp", "png"):
+        raise HTTPException(status_code=400, detail="fmt must be webp or png")
+
+    try:
+        repo.delete_tile(uuid, z, y, x, fmt=fmt)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Tile delete failed: {e}")
+
+    return {"status": "ok", "uuid": uuid, "deleted": "tile", "z": z, "y": y, "x": x, "fmt": fmt}
+
+
+@tiles_router.delete("/{uuid}")
+def admin_delete_all_tiles(uuid: str, repo=Depends(get_tile_repo)):
+    """
+    Удалить все тайлы по uuid (включая manifest).
+    """
+    try:
+        stats = repo.delete_all_tiles(uuid)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk delete failed: {e}")
+
+    return {"status": "ok", "uuid": uuid, "deleted": "all_tiles", **stats}
+
+
+@tiles_router.delete("")
+def admin_delete_all_tiles_global(repo=Depends(get_tile_repo)):
+    """
+    Удалить ВСЕ тайлы ВСЕХ изображений (очень опасно).
+    """
+    if not hasattr(repo, "delete_all_tiles_global"):
+        raise HTTPException(status_code=500, detail="Tile repository doesn't support global delete")
+
+    try:
+        stats = repo.delete_all_tiles_global()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Global tiles delete failed: {e}")
+
+    return {"status": "ok", "deleted": "all_tiles_global", **stats}
+
+

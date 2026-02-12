@@ -1,3 +1,5 @@
+# app/repos/fs_tile_repo.py
+
 from __future__ import annotations
 from pathlib import Path
 from typing import Tuple, BinaryIO, Optional
@@ -41,3 +43,33 @@ class FileSystemTileRepository:
         d = self.root / "tiles" / uuid
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
+
+
+    def delete_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: str) -> None:
+        p = self._tile_path(uuid, z, y, x, fmt)
+        p.unlink(missing_ok=True)
+
+    def delete_all_tiles(self, uuid: str) -> dict:
+        import shutil
+        d = self.root / "tiles" / uuid
+        if not d.exists():
+            return {"deleted": 0, "failed": 0}
+        # посчитать файлы (примерно)
+        files = list(d.rglob("*"))
+        shutil.rmtree(d, ignore_errors=True)
+        return {"deleted": len(files), "failed": 0}
+
+
+    def delete_all_tiles_global(self) -> dict:
+        """
+        Удаляет папку tiles целиком (все uuid).
+        """
+        import shutil
+        d = self.root / "tiles"
+        if not d.exists():
+            return {"deleted": 0, "failed": 0}
+        files = list(d.rglob("*"))
+        shutil.rmtree(d, ignore_errors=True)
+        return {"deleted": len(files), "failed": 0}
+
+

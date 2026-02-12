@@ -1,8 +1,13 @@
+# app/repos/s3_tile_repo.py
+
+
 from __future__ import annotations
 from typing import Tuple, BinaryIO, Optional
 from io import BytesIO
 from minio import Minio
 from app.domain.tiles import TileFormat
+from minio.deleteobjects import DeleteObject
+
 
 class S3TileRepository:
     def __init__(self, client: Minio, bucket: str):
@@ -67,3 +72,42 @@ class S3TileRepository:
         if to_delete:
             for err in self.client.remove_objects(self.bucket, to_delete):
                 _ = err
+
+
+    def delete_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: str) -> None:
+        key = self._tile_key(uuid, z, y, x, fmt)
+        self.client.remove_object(self.bucket, key)
+
+    def delete_all_tiles(self, uuid: str) -> dict:
+        prefix = f"tiles/{uuid}/"
+        objs = list(self.client.list_objects(self.bucket, prefix=prefix, recursive=True))
+        if not objs:
+            return {"deleted": 0, "failed": 0}
+
+        delete_list = [DeleteObject(o.object_name) for o in objs]
+
+        failed = 0
+        for err in self.client.remove_objects(self.bucket, delete_list):
+            failed += 1
+
+        return {"deleted": len(objs) - failed, "failed": failed}
+
+
+    def delete_all_tiles_global(self) -> dict:
+        """
+        Удаляет ВСЕ тайлы ВСЕХ изображений (prefix tiles/).
+        """
+        prefix = "tiles/"
+        objs = list(self.client.list_objects(self.bucket, prefix=prefix, recursive=True))
+        if not objs:
+            return {"deleted": 0, "failed": 0}
+
+        delete_list = [DeleteObject(o.object_name) for o in objs]
+
+        failed = 0
+        for err in self.client.remove_objects(self.bucket, delete_list):
+            failed += 1
+
+        return {"deleted": len(objs) - failed, "failed": failed}
+
+

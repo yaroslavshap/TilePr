@@ -1,3 +1,5 @@
+# app/domain/tiles.py
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Literal, Optional
@@ -20,4 +22,5 @@ class TileManifest:
     lossless: bool
     levels: Dict[int, LevelInfo]  # key=z
     # можно расширить: created_at, algo, checksum, etc.
+
 

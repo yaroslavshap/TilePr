@@ -1,0 +1,38 @@
+IMAGE_NAME = tile-pr
+TAG        = v1.0.0
+IMAGE      = $(IMAGE_NAME):$(TAG)
+CONTAINER  = tile-pr-container
+.PHONY: all build up down restart logs clean run
+
+
+build:
+	docker build -t $(IMAGE) .
+
+push:
+	docker push $(IMAGE)
+
+logs:
+	docker logs -f $(CONTAINER)
+
+down:
+	@echo "Остановка контейнера $(CONTAINER)..."
+	docker stop $(CONTAINER) 2>/dev/null || true
+	@echo "Удаление контейнера $(CONTAINER)..."
+	docker rm $(CONTAINER) 2>/dev/null || true
+
+clean: down
+	@echo "Удаление образа $(IMAGE)..."
+	docker rmi $(IMAGE) || true
+
+.PHONY: compose-up compose-down compose-restart compose-logs
+
+compose-up: build
+	docker-compose up -d
+
+compose-down:
+	docker-compose down
+
+compose-restart: compose-down compose-up compose-logs
+
+compose-logs:
+	docker-compose logs -f

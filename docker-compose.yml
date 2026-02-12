@@ -2,9 +2,11 @@ services:
   mongo:
     image: mongo:7
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongo_data:/data/db
+    networks:
+      - backend
 
   minio:
     image: minio/minio
@@ -13,11 +15,50 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "29000:9000"
+      - "29001:9001"
     volumes:
       - minio_data:/data
+    networks:
+      - backend
+
+#  tile-pr:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: tile-pr
+#    depends_on:
+#      - mongo
+#      - minio
+#    environment:
+##      # Mongo
+##      MONGO_URI: mongodb://mongo:27017
+##
+##      # MinIO
+##      MINIO_ENDPOINT: minio:9000
+##      MINIO_ACCESS_KEY: minioadmin
+##      MINIO_SECRET_KEY: minioadmin
+##      MINIO_BUCKET: tiles
+##      MINIO_SECURE: "false"
+#
+#      UVICORN_HOST: 0.0.0.0
+#      UVICORN_PORT: 8000
+#    ports:
+#      - "28000:8000"
+#    networks:
+#      - backend
+#    restart: unless-stopped
+#    healthcheck:
+#      test: [ "CMD", "python", "-c", "import requests; requests.get('http://127.0.0.1:8000/health').raise_for_status()" ]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
+#      start_period: 20s
 
 volumes:
   mongo_data:
   minio_data:
+
+networks:
+  backend:
+    driver: bridge
