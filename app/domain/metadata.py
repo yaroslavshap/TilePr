@@ -1,3 +1,5 @@
+# app/domain/metadata.py
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -28,10 +30,4 @@ class ImageMetadata:
     height: Optional[int] = None
     format: Optional[str] = None
     mode: Optional[str] = None
-
-
-# Я заметил, просмотривая тайлы в минио что некоторые из них не квадратные.
-# Мне нужно чтобы все тайлы были квадратные. То есть все тайлы на всех уровнях были размером 256 на 256.
-# Если на како - то тайл не хватает пикселей, то их нужно дорисовывать
-# Вот мой код:
 

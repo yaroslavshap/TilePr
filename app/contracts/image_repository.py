@@ -1,3 +1,6 @@
+# app/contracts/image_repository.py
+
+
 from __future__ import annotations
 from typing import Protocol, Optional, BinaryIO, Tuple
 from app.domain.images import ImageId, ImageLocation
@@ -22,3 +25,6 @@ class ImageRepository(Protocol):
     def delete_by_location(self, loc: ImageLocation, image_id: ImageId) -> None:
         """Удалить оригинал по location."""
         ...
+
+
+

@@ -1,3 +1,5 @@
+# app/domain/images.py
+
 from dataclasses import dataclass
 from typing import Optional, Literal
 

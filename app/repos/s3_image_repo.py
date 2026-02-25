@@ -1,3 +1,6 @@
+# app/repos/s3_image_repo.py
+
+
 from __future__ import annotations
 from typing import Optional, BinaryIO, Tuple
 from minio import Minio
@@ -60,3 +63,6 @@ class S3ImageRepository:
     def delete_by_location(self, loc: ImageLocation, image_id: ImageId) -> None:
         if loc.bucket and loc.key:
             self.client.remove_object(loc.bucket, loc.key)
+
+
+

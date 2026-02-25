@@ -1,3 +1,5 @@
+# app/api/deps.py
+
 from __future__ import annotations
 import os
 from functools import lru_cache
@@ -16,6 +18,8 @@ from app.repos.mongo_metadata_repo import MongoDBMetadataRepository
 
 from app.services.ingest_service import IngestService
 from app.services.original_image_service import OriginalImageService
+from app.services.tile_build_queue import TileBuildQueue
+
 
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 
@@ -106,3 +110,42 @@ def get_tile_repo():
 def get_tile_builder():
     repo = get_tile_repo()
     return TilePyramidBuilder(tile_repo=repo, manifest_repo=repo)
+
+
+# --- Tiles cache + TiledImageService ---
+
+from app.utils.ttl_cache import InMemoryTTLCache
+from app.services.tiled_image_service import TiledImageService
+
+TILES_CACHE_TTL = int(os.getenv("TILES_CACHE_TTL", "120"))  # seconds
+TILES_CACHE_MAX_ITEMS = int(os.getenv("TILES_CACHE_MAX_ITEMS", "50000"))
+TILES_CACHE_MAX_BYTES = int(os.getenv("TILES_CACHE_MAX_BYTES", str(512 * 1024 * 1024)))
+
+@lru_cache(maxsize=1)
+def get_tiles_cache() -> InMemoryTTLCache[object, bytes]:
+    return InMemoryTTLCache(
+        ttl_seconds=TILES_CACHE_TTL,
+        max_items=TILES_CACHE_MAX_ITEMS,
+        max_bytes=TILES_CACHE_MAX_BYTES,
+    )
+
+@lru_cache(maxsize=1)
+def get_tiled_image_service() -> TiledImageService:
+    repo = get_tile_repo()
+    cache = get_tiles_cache()
+    return TiledImageService(tile_repo=repo, manifest_repo=repo, cache=cache)
+
+
+from app.repos.mongo_jobs_repo import MongoJobsRepository
+from config import settings
+
+@lru_cache(maxsize=1)
+def get_jobs_repo() -> MongoJobsRepository:
+    mongo = get_mongo_client()
+    col = mongo[settings.MONGO_DB][settings.MONGO_JOBS_COLLECTION]
+    return MongoJobsRepository(col, ttl_seconds=settings.MONGO_JOBS_TTL_SECONDS)
+
+
+@lru_cache(maxsize=1)
+def get_tile_build_queue() -> TileBuildQueue:
+    return TileBuildQueue(settings.RABBIT_URL)

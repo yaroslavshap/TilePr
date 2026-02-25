@@ -1,3 +1,6 @@
+# app/utils/image_probe.py
+
+
 from PIL import Image
 
 def probe_image(path: str) -> dict:
@@ -9,3 +12,5 @@ def probe_image(path: str) -> dict:
             "format": im.format,
             "mode": im.mode,
         }
+
+

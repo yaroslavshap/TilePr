@@ -1,3 +1,5 @@
+# app/utils/counting_stream.py
+
 from typing import BinaryIO
 
 class CountingReader:
@@ -9,3 +11,6 @@ class CountingReader:
         b = self.base.read(size)
         self.count += len(b)
         return b
+
+
+

@@ -8,6 +8,12 @@ from app.contracts.image_repository import ImageRepository
 from app.services.original_image_service import OriginalImageService
 from app.contracts.metadata_repository import MetadataRepository
 
+from uuid import uuid4
+from app.api.deps import get_tile_build_queue, get_jobs_repo
+from app.services.tile_build_queue import TileBuildQueue
+from app.repos.mongo_jobs_repo import MongoJobsRepository
+from app.domain.tiles import TileFormat
+
 
 # ------------------- Ingest (upload + parse + mongo) -------------------
 
@@ -56,8 +62,6 @@ def ingest(
         "key": meta.key,
         "path": meta.path,
     }
-
-
 
 
 # -------------------- STORAGE (original images) Upload only  --------------------
@@ -234,3 +238,84 @@ def admin_delete_all_metadata(
         raise HTTPException(status_code=500, detail=f"Metadata bulk delete failed: {e}")
 
     return {"status": "ok", "deleted_count": getattr(res, "deleted_count", None)}
+
+
+
+@ingest_router.post("/images/{storage}/ingest2")
+def ingest2(
+    storage: str,
+    file: UploadFile = File(...),
+    uuid: str | None = Query(default=None, description="Optional UUID for idempotency"),
+    on_conflict: str = Query(default="error", pattern="^(error|overwrite|skip)$"),
+
+    # --- NEW: флаг + параметры билда тайлов ---
+    build_tiles: bool = Query(default=False, description="If true — enqueue tiles build job"),
+    tiles_tile_size: int = Query(256, description="256 or 512", alias="tiles_tile_size"),
+    tiles_fmt: TileFormat = Query("webp", description="webp or png", alias="tiles_fmt"),
+    tiles_lossless: bool = Query(False, alias="tiles_lossless"),
+
+    q: TileBuildQueue = Depends(get_tile_build_queue),
+    jobs: MongoJobsRepository = Depends(get_jobs_repo),
+):
+    try:
+        svc = get_ingest_service(storage)
+    except Exception:
+        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
+
+    try:
+        meta = svc.ingest(
+            uuid=uuid,
+            on_conflict=on_conflict,  # type: ignore[arg-type]
+            filename=file.filename,
+            content_type=file.content_type,
+            upload_file_stream=file.file,
+        )
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ingest failed: {e}")
+
+    job_info = None
+    if build_tiles:
+        if tiles_tile_size not in (256, 512):
+            raise HTTPException(status_code=400, detail="tiles_tile_size must be 256 or 512")
+        if tiles_fmt not in ("webp", "png"):
+            raise HTTPException(status_code=400, detail="tiles_fmt must be webp or png")
+
+        job_id = str(uuid4())
+        payload = {
+            "job_id": job_id,
+            "uuid": meta.uuid,
+            "tile_size": tiles_tile_size,
+            "fmt": tiles_fmt,
+            "lossless": tiles_lossless,
+            "attempt": 0,
+            "source": "ingest",
+        }
+
+        # статус в Mongo + публикация в Rabbit
+        try:
+            jobs.create(job_id=job_id, uuid=meta.uuid, payload=payload)
+            q.publish_build(payload)
+            job_info = {"job_id": job_id, "status": "queued"}
+        except Exception as e:
+            # ingestion уже успешен — просто возвращаем, что enqueue не удалось
+            job_info = {"job_id": job_id, "status": "enqueue_failed", "error": str(e)}
+
+    return {
+        "uuid": meta.uuid,
+        "uri": meta.uri,
+        "storage": meta.storage,
+        "name": meta.name,
+        "last_updated": meta.last_updated.isoformat(),
+        "content_type": meta.content_type,
+        "size_bytes": meta.size_bytes,
+        "width": meta.width,
+        "height": meta.height,
+        "format": meta.format,
+        "mode": meta.mode,
+        "bucket": meta.bucket,
+        "key": meta.key,
+        "path": meta.path,
+        "tiles_job": job_info,  # NEW
+    }

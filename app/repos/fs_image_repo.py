@@ -1,3 +1,5 @@
+# app/repos/fs_image_repo.py
+
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional, BinaryIO, Tuple
@@ -65,3 +67,6 @@ class FileSystemImageRepository:
         d = self._dir(image_id)
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
+
+
+

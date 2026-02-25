@@ -1,3 +1,41 @@
+#services:
+#  mongo:
+#    image: mongo:7
+#    ports:
+#      - "27018:27017"
+#    volumes:
+#      - mongo_data:/data/db
+#    networks:
+#      - backend
+#
+#  minio:
+#    image: minio/minio
+#    command: server /data --console-address ":9001"
+#    environment:
+#      MINIO_ROOT_USER: minioadmin
+#      MINIO_ROOT_PASSWORD: minioadmin
+#    ports:
+#      - "29000:9000"
+#      - "29001:9001"
+#    volumes:
+#      - minio_data:/data
+#    networks:
+#      - backend
+#
+#  rabbitmq:
+#    image: rabbitmq:3-management
+#    ports:
+#      - "5672:5672"    # AMQP
+#      - "15672:15672"  # UI
+#volumes:
+#  mongo_data:
+#  minio_data:
+#
+#networks:
+#  backend:
+#    driver: bridge
+
+
 services:
   mongo:
     image: mongo:7
@@ -5,8 +43,12 @@ services:
       - "27018:27017"
     volumes:
       - mongo_data:/data/db
-    networks:
-      - backend
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   minio:
     image: minio/minio
@@ -19,41 +61,93 @@ services:
       - "29001:9001"
     volumes:
       - minio_data:/data
-    networks:
-      - backend
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/ready > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-#  tile-pr:
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
-#    container_name: tile-pr
-#    depends_on:
-#      - mongo
-#      - minio
-#    environment:
-##      # Mongo
-##      MONGO_URI: mongodb://mongo:27017
-##
-##      # MinIO
-##      MINIO_ENDPOINT: minio:9000
-##      MINIO_ACCESS_KEY: minioadmin
-##      MINIO_SECRET_KEY: minioadmin
-##      MINIO_BUCKET: tiles
-##      MINIO_SECURE: "false"
-#
-#      UVICORN_HOST: 0.0.0.0
-#      UVICORN_PORT: 8000
-#    ports:
-#      - "28000:8000"
-#    networks:
-#      - backend
-#    restart: unless-stopped
-#    healthcheck:
-#      test: [ "CMD", "python", "-c", "import requests; requests.get('http://127.0.0.1:8000/health').raise_for_status()" ]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 3
-#      start_period: 20s
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks: [backend]
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    command: ["python", "main.py"]
+    ports:
+      - "28000:28000"
+    networks: [backend]
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      MINIO_ENDPOINT: minio:9000
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+
+      # остальное как у тебя
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_SECURE: "false"
+      MINIO_BUCKET: palleon-track
+    depends_on:
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:28000/health > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  tile-worker:
+    build: .
+    command: ["python", "-m", "app.workers.tile_worker"]
+    networks: [backend]
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      MINIO_ENDPOINT: minio:9000
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+
+      RABBIT_QUEUE: tile.build
+      RABBIT_RETRY_QUEUE: tile.build.retry
+      RABBIT_DLQ: tile.build.dlq
+
+      TILE_BUILD_MAX_RETRIES: "5"
+      TILE_BUILD_RETRY_DELAY_MS: "10000"
+
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_SECURE: "false"
+      MINIO_BUCKET: palleon-track
+
+      TILES_BACKEND: s3
+      TILES_BUCKET: palleon-track
+    depends_on:
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.workers.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
 volumes:
   mongo_data:
@@ -62,3 +156,8 @@ volumes:
 networks:
   backend:
     driver: bridge
+
+
+# docker compose up --build api
+# docker compose up --build tile-worker
+# docker compose up --build --scale tile-worker=5

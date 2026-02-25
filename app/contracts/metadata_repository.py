@@ -1,3 +1,5 @@
+# app/contracts/metadata_repository.py
+
 from __future__ import annotations
 from typing import Protocol, Optional
 from app.domain.metadata import ImageMetadata
@@ -6,3 +8,6 @@ class MetadataRepository(Protocol):
     def upsert(self, meta: ImageMetadata) -> None: ...
     def get(self, uuid: str) -> Optional[ImageMetadata]: ...
     def delete(self, uuid: str) -> None: ...
+
+
+

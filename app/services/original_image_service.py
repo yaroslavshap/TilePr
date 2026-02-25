@@ -1,4 +1,5 @@
 # app/services/original_image_service.py
+
 from __future__ import annotations
 from typing import BinaryIO, Tuple
 
@@ -51,3 +52,5 @@ class OriginalImageService:
         repo = self.repo_resolver(meta.storage)
         loc = self._location_from_meta(meta)
         repo.delete_by_location(loc, ImageId(uuid))
+
+
