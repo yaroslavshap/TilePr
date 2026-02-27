@@ -1,26 +1,35 @@
 # app/api/admin_routes.py
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from fastapi.responses import StreamingResponse
-from app.api.deps import get_original_service, get_metadata_repo, get_image_repo, get_ingest_service
-from app.contracts.image_repository import ImageRepository
-from app.services.original_image_service import OriginalImageService
-from app.contracts.metadata_repository import MetadataRepository
 
 from uuid import uuid4
-from app.api.deps import get_tile_build_queue, get_jobs_repo
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
+from fastapi.responses import StreamingResponse
+
+from app.contracts.image_repository import ImageRepository
+from app.contracts.metadata_repository import MetadataRepository
+
+from app.services.original_image_service import OriginalImageService
 from app.services.tile_build_queue import TileBuildQueue
+
+from app.api.deps import get_tile_build_queue, get_jobs_repo, get_original_service, get_metadata_repo, get_image_repo, get_ingest_service
+from app.api.schemas.images_list import ImageListResponse, ImageListItem
+
 from app.repos.mongo_jobs_repo import MongoJobsRepository
 from app.domain.tiles import TileFormat
 
+from app.api.schemas.images import (
+    IngestResponse,
+    UploadOnlyResponse,
+    ImageMetadataDTO,
+    DeleteOneResponse,
+    BulkOpResponse,
+)
 
 # ------------------- Ingest (upload + parse + mongo) -------------------
 
 ingest_router = APIRouter(prefix="/ingest", tags=["INGEST = STORAGE + MINIO"])
 
 
-@ingest_router.post("/images/{storage}/ingest")
+@ingest_router.post("/images/{storage}/ingest", response_model=IngestResponse)
 def ingest(
     storage: str,
     file: UploadFile = File(...),
@@ -46,22 +55,36 @@ def ingest(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Ingest failed: {e}")
 
-    return {
-        "uuid": meta.uuid,
-        "uri": meta.uri,
-        "storage": meta.storage,
-        "name": meta.name,
-        "last_updated": meta.last_updated.isoformat(),
-        "content_type": meta.content_type,
-        "size_bytes": meta.size_bytes,
-        "width": meta.width,
-        "height": meta.height,
-        "format": meta.format,
-        "mode": meta.mode,
-        "bucket": meta.bucket,
-        "key": meta.key,
-        "path": meta.path,
-    }
+    return IngestResponse(
+        uuid=meta.uuid,
+        uri=meta.uri,
+        storage=meta.storage,
+        name=meta.name,
+        last_updated=meta.last_updated,
+        content_type=meta.content_type,
+        size_bytes=meta.size_bytes,
+        width=meta.width,
+        height=meta.height,
+        format=meta.format,
+        mode=meta.mode,
+        bucket=meta.bucket,
+        key=meta.key,
+        path=meta.path,
+    )
+
+@ingest_router.delete("/purge", response_model=BulkOpResponse)
+def admin_purge_all(
+    batch_size: int = Query(1000, ge=1, le=5000),
+    svc: OriginalImageService = Depends(get_original_service),
+):
+    res = svc.bulk_delete_fully(batch_size=batch_size)
+    return BulkOpResponse(
+        total=res.total,
+        storage_deleted=res.storage_deleted,
+        metadata_deleted=res.metadata_deleted,
+        failed=res.failed,
+        note="strict consistency: metadata deleted only after successful storage delete",
+    )
 
 
 # -------------------- STORAGE (original images) Upload only  --------------------
@@ -86,7 +109,7 @@ def stream_minio(resp):
 
 
 
-@storage_router.post("/images/{storage}/upload")
+@storage_router.post("/images/{storage}/upload", response_model=UploadOnlyResponse)
 def upload_only(
     storage: str,
     file: UploadFile = File(...),
@@ -108,11 +131,16 @@ def upload_only(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Upload failed: {e}")
 
-    return {"uuid": image_id.value, "uri": loc.uri, "storage": loc.storage, "size_bytes": loc.size_bytes, "content_type": loc.content_type}
+    return UploadOnlyResponse(
+        uuid=image_id.value,
+        uri=loc.uri,
+        storage=loc.storage,  # type: ignore[arg-type] если ругается mypy
+        size_bytes=loc.size_bytes,
+        content_type=loc.content_type,
+    )
 
 
-
-@storage_router.delete("/{uuid}")
+@storage_router.delete("/{uuid}", response_model=DeleteOneResponse)
 def admin_delete_original_only(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
     try:
         svc.delete_storage_only(uuid)
@@ -121,66 +149,51 @@ def admin_delete_original_only(uuid: str, svc: OriginalImageService = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Storage delete failed: {e}")
 
-    return {"status": "ok", "uuid": uuid, "deleted": "storage_only"}
+    return DeleteOneResponse(uuid=uuid, deleted="storage_only")
 
 
 
-@storage_router.delete("")
+@storage_router.delete("", response_model=BulkOpResponse)
 def admin_delete_all_originals_only(
-    meta_repo: MetadataRepository = Depends(get_metadata_repo),
     svc: OriginalImageService = Depends(get_original_service),
+    batch_size: int = Query(1000, ge=1, le=5000),
 ):
-    if not hasattr(meta_repo, "col"):
-        raise HTTPException(status_code=500, detail="MetadataRepository doesn't expose Mongo collection for bulk ops")
-
-    deleted = 0
-    failed = 0
-
-    cursor = meta_repo.col.find({}, {"uuid": 1})  # type: ignore[attr-defined]
-    for doc in cursor:
-        uuid = doc.get("uuid")
-        if not uuid:
-            continue
-        try:
-            svc.delete_storage_only(uuid)
-            deleted += 1
-        except Exception:
-            failed += 1
-
-    return {"status": "ok", "deleted": deleted, "failed": failed, "note": "metadata NOT deleted"}
-
-
-
+    res = svc.bulk_delete_storage_only(batch_size=batch_size)
+    return BulkOpResponse(
+        total=res.total,
+        storage_deleted=res.storage_deleted,
+        failed=res.failed,
+        note="metadata NOT deleted",
+    )
 
 
 # -------------------- METADATA - Meta / Download / Delete (через Mongo) --------------------
 
 meta_router = APIRouter(prefix="/metadata", tags=["Metadata (Mongo)"])
 
-@meta_router.get("/images/{uuid}/meta")
+@meta_router.get("/images/{uuid}/meta", response_model=ImageMetadataDTO)
 def get_meta(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
     try:
         meta = svc.get_metadata(uuid)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Metadata not found")
 
-    return {
-        "uuid": meta.uuid,
-        "name": meta.name,
-        "last_updated": meta.last_updated.isoformat(),
-        "uri": meta.uri,
-        "storage": meta.storage,
-        "path": meta.path,
-        "bucket": meta.bucket,
-        "key": meta.key,
-        "content_type": meta.content_type,
-        "size_bytes": meta.size_bytes,
-        "width": meta.width,
-        "height": meta.height,
-        "format": meta.format,
-        "mode": meta.mode,
-    }
-
+    return ImageMetadataDTO(
+        uuid=meta.uuid,
+        name=meta.name,
+        last_updated=meta.last_updated,
+        uri=meta.uri,
+        storage=meta.storage,
+        path=meta.path,
+        bucket=meta.bucket,
+        key=meta.key,
+        content_type=meta.content_type,
+        size_bytes=meta.size_bytes,
+        width=meta.width,
+        height=meta.height,
+        format=meta.format,
+        mode=meta.mode,
+    )
 
 @meta_router.get("/images/{uuid}")
 def download_original(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
@@ -205,40 +218,33 @@ def download_original(uuid: str, svc: OriginalImageService = Depends(get_origina
     )
 
 
-@meta_router.delete("/{uuid}")
+@meta_router.delete("/{uuid}", response_model=DeleteOneResponse)
 def admin_delete_metadata_only(
     uuid: str,
     meta_repo: MetadataRepository = Depends(get_metadata_repo),
 ):
     """
     Удаляет только метаданные из Mongo.
-    Оригинал в storage НЕ трогает (останется “сирота” в хранилище).
+    Оригинал в storage НЕ трогает
     """
     try:
         meta_repo.delete(uuid)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Metadata delete failed: {e}")
-    return {"status": "ok", "uuid": uuid, "deleted": "metadata_only"}
+    return DeleteOneResponse(uuid=uuid, deleted="metadata_only")
 
 
-@meta_router.delete("")
+@meta_router.delete("", response_model=BulkOpResponse)
 def admin_delete_all_metadata(
-    meta_repo: MetadataRepository = Depends(get_metadata_repo),
+    svc: OriginalImageService = Depends(get_original_service),
 ):
-    """
-    Удаляет ВСЕ метаданные из Mongo (всю коллекцию).
-    Оригиналы в storage НЕ трогаются.
-    """
-    if not hasattr(meta_repo, "col"):
-        raise HTTPException(status_code=500, detail="MetadataRepository doesn't expose Mongo collection for bulk ops")
-
-    try:
-        res = meta_repo.col.delete_many({})  # type: ignore[attr-defined]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Metadata bulk delete failed: {e}")
-
-    return {"status": "ok", "deleted_count": getattr(res, "deleted_count", None)}
-
+    res = svc.bulk_delete_metadata_only()
+    return BulkOpResponse(
+        total=res.total,
+        metadata_deleted=res.metadata_deleted,
+        failed=res.failed,
+        note="storage NOT deleted",
+    )
 
 
 @ingest_router.post("/images/{storage}/ingest2")
@@ -319,3 +325,50 @@ def ingest2(
         "path": meta.path,
         "tiles_job": job_info,  # NEW
     }
+
+
+# -------------------- IMAGES LIST (metadata + url) --------------------
+
+images_list_router = APIRouter(prefix="/images", tags=["Images list"])
+
+@images_list_router.get("", response_model=ImageListResponse)
+def list_images(
+    request: Request,
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    meta_repo: MetadataRepository = Depends(get_metadata_repo),
+):
+    # meta_repo.list должен вернуть (items, total)
+    metas, total = meta_repo.list(limit=limit, offset=offset)
+
+    # У тебя выдача оригинала тут:
+    # @meta_router.get("/images/{uuid}") -> download_original
+    def build_original_url(uuid: str) -> str:
+        return f"/metadata/images/{uuid}"
+
+    items = [
+        ImageListItem(
+            uuid=m.uuid,
+            name=m.name,
+            last_updated=m.last_updated,
+            storage=m.storage,
+            content_type=m.content_type,
+            size_bytes=m.size_bytes,
+            width=m.width,
+            height=m.height,
+            format=m.format,
+            mode=m.mode,
+            original_url=build_original_url(m.uuid),
+        )
+        for m in metas
+    ]
+
+    has_more = (offset + limit) < total
+
+    return ImageListResponse(
+        items=items,
+        limit=limit,
+        offset=offset,
+        total=total,
+        has_more=has_more,
+    )

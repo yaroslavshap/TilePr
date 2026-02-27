@@ -1,8 +1,7 @@
 # app/repos/mongo_metadata_repo.py
 
-
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Sequence, Tuple, Iterable
 from pymongo.collection import Collection
 from app.domain.metadata import ImageMetadata
 
@@ -12,7 +11,46 @@ class MongoDBMetadataRepository:
         self.col.create_index("uuid", unique=True)
 
     def upsert(self, meta: ImageMetadata) -> None:
-        doc = {
+        doc = self._to_doc(meta)
+        self.col.update_one({"uuid": meta.uuid}, {"$set": doc}, upsert=True)
+
+    def get(self, uuid: str) -> Optional[ImageMetadata]:
+        doc = self.col.find_one({"uuid": uuid})
+        return self._from_doc(doc) if doc else None
+
+    def delete(self, uuid: str) -> None:
+        self.col.delete_one({"uuid": uuid})
+
+    def list(self, *, limit: int, offset: int) -> Tuple[Sequence[ImageMetadata], int]:
+        limit = max(1, min(int(limit), 200))
+        offset = max(0, int(offset))
+
+        total = self.col.count_documents({})
+        docs = list(
+            self.col.find({})
+            .sort("_id", -1)
+            .skip(offset)
+            .limit(limit)
+        )
+        return [self._from_doc(d) for d in docs], total
+
+
+    def iter_uuids(self, *, batch_size: int = 1000) -> Iterable[str]:
+        batch_size = max(1, min(int(batch_size), 5000))
+        cur = self.col.find({}, {"uuid": 1}).batch_size(batch_size)
+        for doc in cur:
+            u = doc.get("uuid")
+            if u:
+                yield u
+
+    def delete_all(self) -> int:
+        res = self.col.delete_many({})
+        return int(getattr(res, "deleted_count", 0))
+
+    # --- mappers ---
+
+    def _to_doc(self, meta: ImageMetadata) -> dict:
+        return {
             "uuid": meta.uuid,
             "name": meta.name,
             "last_updated": meta.last_updated,
@@ -31,12 +69,9 @@ class MongoDBMetadataRepository:
             "format": meta.format,
             "mode": meta.mode,
         }
-        self.col.update_one({"uuid": meta.uuid}, {"$set": doc}, upsert=True)
 
-    def get(self, uuid: str) -> Optional[ImageMetadata]:
-        doc = self.col.find_one({"uuid": uuid})
-        if not doc:
-            return None
+    def _from_doc(self, doc: dict) -> ImageMetadata:
+        # doc["..."] — обязательные поля, doc.get — опциональные
         return ImageMetadata(
             uuid=doc["uuid"],
             name=doc.get("name"),
@@ -56,9 +91,3 @@ class MongoDBMetadataRepository:
             format=doc.get("format"),
             mode=doc.get("mode"),
         )
-
-    def delete(self, uuid: str) -> None:
-        self.col.delete_one({"uuid": uuid})
-
-
-

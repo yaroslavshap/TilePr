@@ -106,11 +106,6 @@ def get_tile_repo():
     repo.ensure_bucket()
     return repo
 
-@lru_cache(maxsize=1)
-def get_tile_builder():
-    repo = get_tile_repo()
-    return TilePyramidBuilder(tile_repo=repo, manifest_repo=repo)
-
 
 # --- Tiles cache + TiledImageService ---
 
@@ -129,11 +124,7 @@ def get_tiles_cache() -> InMemoryTTLCache[object, bytes]:
         max_bytes=TILES_CACHE_MAX_BYTES,
     )
 
-@lru_cache(maxsize=1)
-def get_tiled_image_service() -> TiledImageService:
-    repo = get_tile_repo()
-    cache = get_tiles_cache()
-    return TiledImageService(tile_repo=repo, manifest_repo=repo, cache=cache)
+
 
 
 from app.repos.mongo_jobs_repo import MongoJobsRepository
@@ -149,3 +140,20 @@ def get_jobs_repo() -> MongoJobsRepository:
 @lru_cache(maxsize=1)
 def get_tile_build_queue() -> TileBuildQueue:
     return TileBuildQueue(settings.RABBIT_URL)
+
+
+from app.services.tiles_service import TilesService
+
+@lru_cache(maxsize=1)
+def get_tiles_service() -> TilesService:
+    repo = get_tile_repo()
+    cache = get_tiles_cache()
+    return TilesService(repo=repo, cache=cache)
+
+
+# Сервис не выбирает реализацию.
+# Сервис не знает реализацию.
+# Сервис не импортирует реализацию.
+# Сервис получает уже готовый объект.
+
+# Это Dependency Injection.
