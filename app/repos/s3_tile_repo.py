@@ -1,10 +1,9 @@
 # app/repos/s3_tile_repo.py
 
 
-from __future__ import annotations
 from typing import Tuple, BinaryIO, Optional
 from io import BytesIO
-from minio import Minio
+from minio import Minio, S3Error
 from app.domain.tiles import TileFormat
 from minio.deleteobjects import DeleteObject
 
@@ -34,10 +33,17 @@ class S3TileRepository:
         )
         return f"minio://{self.bucket}/{key}"
 
+    # ======== NEW ========
     def open_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: TileFormat) -> Tuple[str, BinaryIO]:
-        key = self._tile_key(uuid, z, y, x, fmt)
-        resp = self.client.get_object(self.bucket, key)
-        return f"minio://{self.bucket}/{key}", resp
+        try:
+            key = self._tile_key(uuid, z, y, x, fmt)
+            resp = self.client.get_object(self.bucket, key)
+            return f"minio://{self.bucket}/{key}", resp
+        except S3Error as e:
+            if e.code in ("NoSuchKey", "NoSuchObject", "NoSuchBucket"):
+                raise FileNotFoundError("Tile not found") from e
+            raise
+    # ======== NEW ========
 
     def put_manifest(self, uuid: str, manifest_json: bytes) -> str:
         key = self._manifest_key(uuid)
@@ -74,9 +80,16 @@ class S3TileRepository:
                 _ = err
 
 
+    # ======== NEW ========
     def delete_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: str) -> None:
-        key = self._tile_key(uuid, z, y, x, fmt)
-        self.client.remove_object(self.bucket, key)
+        try:
+            key = self._tile_key(uuid, z, y, x, fmt)
+            self.client.remove_object(self.bucket, key)
+        except S3Error as e:
+            if e.code in ("NoSuchKey", "NoSuchObject"):
+                raise FileNotFoundError("Tile not found") from e
+    # ======== NEW ========
+
 
     def delete_all_tiles(self, uuid: str) -> dict:
         prefix = f"tiles/{uuid}/"

@@ -1,6 +1,5 @@
-from __future__ import annotations
 
-from typing import Dict, Literal, Optional
+from typing import Dict, Literal
 from pydantic import BaseModel, Field, conint
 
 TileFormat = Literal["webp", "png"]

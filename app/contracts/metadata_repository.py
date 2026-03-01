@@ -1,6 +1,5 @@
 # app/contracts/metadata_repository.py
 
-from __future__ import annotations
 from typing import Protocol, Optional, Sequence, Tuple, Iterable
 from app.domain.metadata import ImageMetadata
 

@@ -1,6 +1,5 @@
 # app/repos/mongo_jobs_repo.py
 
-# from __future__ import annotations
 # from datetime import datetime
 # from typing import Optional
 # from pymongo.collection import Collection
@@ -32,7 +31,6 @@
 #         return self.col.find_one({"job_id": job_id}, {"_id": 0})
 
 
-from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 from pymongo.collection import Collection

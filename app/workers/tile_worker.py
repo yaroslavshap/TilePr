@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 import os
@@ -8,7 +7,6 @@ import pika
 from config import settings
 from app.api.deps import (
     get_original_service,
-    get_tile_builder,
     get_jobs_repo,
 )
 from app.api.tiles_routes import _stream_minio  # можно вынести в util, но так тоже ок

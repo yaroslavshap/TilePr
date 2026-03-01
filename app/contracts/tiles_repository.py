@@ -1,6 +1,5 @@
 # app/contracts/tiles_repository.py
 
-# from __future__ import annotations
 # from typing import Protocol, BinaryIO, Tuple, Optional
 # from app.domain.tiles import TileFormat
 #
@@ -23,7 +22,6 @@
 #
 #
 
-from __future__ import annotations
 from typing import Protocol, BinaryIO, Tuple, Optional
 from app.domain.tiles import TileFormat
 
@@ -36,7 +34,7 @@ class TilesRepository(Protocol):
     def put_manifest(self, uuid: str, manifest_json: bytes) -> str: ...
     def get_manifest(self, uuid: str) -> Optional[bytes]: ...
 
-    # deletes (admin)
+    # deletes
     def delete_prefix(self, uuid: str) -> None: ...
     def delete_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: TileFormat) -> None: ...
     def delete_all_tiles(self, uuid: str) -> dict: ...
@@ -46,9 +44,7 @@ class TilesRepository(Protocol):
 # Сейчас твой API вызывает методы, которых нет в контракте (delete_tile, delete_all_tiles, delete_all_tiles_global, get_manifest и т.д.).
 # Если “всё публичное”, то либо:
 #
-# добавляем это в контракт (нормально), либо
-#
-# делаем отдельный TileAdminRepository (более строго).
+# добавляем это в контракт (нормально),
 #
 # Чтобы не плодить сущности — сделаем один контракт TilesRepository, который покрывает и manifest, и админские удаления.
 

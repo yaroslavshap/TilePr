@@ -1,7 +1,6 @@
 # app/repos/mem_image_repo.py
 
 
-from __future__ import annotations
 from io import BytesIO
 from typing import Optional, BinaryIO, Tuple
 

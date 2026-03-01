@@ -1,7 +1,6 @@
 # app/repos/s3_image_repo.py
 
 
-from __future__ import annotations
 from typing import Optional, BinaryIO, Tuple
 from minio import Minio
 

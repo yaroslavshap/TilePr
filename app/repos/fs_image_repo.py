@@ -1,6 +1,5 @@
 # app/repos/fs_image_repo.py
 
-from __future__ import annotations
 from pathlib import Path
 from typing import Optional, BinaryIO, Tuple
 import shutil

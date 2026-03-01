@@ -1,10 +1,8 @@
 # app/api/deps.py
 
-from __future__ import annotations
-import os
 from functools import lru_cache
 
-from fastapi import Depends
+from fastapi import HTTPException
 from pymongo import MongoClient
 from minio import Minio
 
@@ -16,60 +14,63 @@ from app.repos.mem_image_repo import InMemoryImageRepository
 from app.repos.s3_image_repo import S3ImageRepository
 from app.repos.mongo_metadata_repo import MongoDBMetadataRepository
 
+from app.repos.s3_tile_repo import S3TileRepository
+from app.repos.fs_tile_repo import FileSystemTileRepository
+
+from app.repos.mongo_jobs_repo import MongoJobsRepository
+
 from app.services.ingest_service import IngestService
 from app.services.original_image_service import OriginalImageService
 from app.services.tile_build_queue import TileBuildQueue
+from app.services.tiles_service import TilesService
 
+from app.utils.ttl_cache import InMemoryTTLCache
 
-DATA_DIR = os.getenv("DATA_DIR", "./data")
-
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-MONGO_DB = os.getenv("MONGO_DB", "images_db")
-MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "image_metadata")
-
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
-MINIO_BUCKET = os.getenv("MINIO_BUCKET", "palleon-track")
-
-MEM_MAX_BYTES = int(os.getenv("MEM_MAX_BYTES", str(300 * 1024 * 1024)))
+from config import settings
 
 
 @lru_cache(maxsize=1)
 def get_mongo_client() -> MongoClient:
-    return MongoClient(MONGO_URL)
+    return MongoClient(settings.MONGO_URL)
+
 
 @lru_cache(maxsize=1)
 def get_minio_client() -> Minio:
     return Minio(
-        MINIO_ENDPOINT,
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
-        secure=MINIO_SECURE,
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
     )
+
 
 @lru_cache(maxsize=1)
 def get_metadata_repo() -> MetadataRepository:
     mongo = get_mongo_client()
-    col = mongo[MONGO_DB][MONGO_COLLECTION]
+    col = mongo[settings.MONGO_DB][settings.MONGO_COLLECTION]
     return MongoDBMetadataRepository(col)
+
 
 @lru_cache(maxsize=1)
 def get_fs_repo() -> ImageRepository:
-    return FileSystemImageRepository(DATA_DIR)
+    return FileSystemImageRepository(settings.DATA_DIR)
+
 
 @lru_cache(maxsize=1)
 def get_mem_repo() -> ImageRepository:
-    return InMemoryImageRepository(max_bytes=MEM_MAX_BYTES)
+    return InMemoryImageRepository(max_bytes=settings.MEM_MAX_BYTES)
+
 
 @lru_cache(maxsize=1)
 def get_s3_repo() -> ImageRepository:
     client = get_minio_client()
-    repo = S3ImageRepository(client, MINIO_BUCKET)
+    repo = S3ImageRepository(client, settings.MINIO_BUCKET)
     repo.ensure_bucket()
     return repo
 
+
+
+# ======== NEW ========
 def resolve_image_repo(storage: str) -> ImageRepository:
     if storage == "fs":
         return get_fs_repo()
@@ -80,55 +81,51 @@ def resolve_image_repo(storage: str) -> ImageRepository:
     raise ValueError("storage must be one of: fs, mem, s3")
 
 def get_image_repo(storage: str) -> ImageRepository:
-    return resolve_image_repo(storage)
+    try:
+        return resolve_image_repo(storage)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
+
+
 
 def get_ingest_service(storage: str) -> IngestService:
-    return IngestService(image_repo=resolve_image_repo(storage), meta_repo=get_metadata_repo())
+    try:
+        return IngestService(image_repo=resolve_image_repo(storage), meta_repo=get_metadata_repo())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
+# ======== NEW ========
+
+
 
 def get_original_service() -> OriginalImageService:
     return OriginalImageService(meta_repo=get_metadata_repo(), repo_resolver=resolve_image_repo)
 
 
-from functools import lru_cache
-from app.repos.s3_tile_repo import S3TileRepository
-from app.repos.fs_tile_repo import FileSystemTileRepository
-from app.services.tile_pyramid_builder import TilePyramidBuilder
-
-TILES_BACKEND = os.getenv("TILES_BACKEND", "s3")  # s3 | fs
-TILES_FS_DIR = os.getenv("TILES_FS_DIR", "./data")
-TILES_BUCKET = os.getenv("TILES_BUCKET", os.getenv("MINIO_BUCKET", "palleon-track"))
+# ---------------- Tiles repo ----------------
 
 @lru_cache(maxsize=1)
 def get_tile_repo():
-    if TILES_BACKEND == "fs":
-        return FileSystemTileRepository(TILES_FS_DIR)
-    repo = S3TileRepository(get_minio_client(), TILES_BUCKET)
+    if settings.TILES_BACKEND == "fs":
+        return FileSystemTileRepository(settings.TILES_FS_DIR)
+
+    bucket = settings.TILES_BUCKET or settings.MINIO_BUCKET
+    repo = S3TileRepository(get_minio_client(), bucket)
     repo.ensure_bucket()
     return repo
 
 
-# --- Tiles cache + TiledImageService ---
-
-from app.utils.ttl_cache import InMemoryTTLCache
-from app.services.tiled_image_service import TiledImageService
-
-TILES_CACHE_TTL = int(os.getenv("TILES_CACHE_TTL", "120"))  # seconds
-TILES_CACHE_MAX_ITEMS = int(os.getenv("TILES_CACHE_MAX_ITEMS", "50000"))
-TILES_CACHE_MAX_BYTES = int(os.getenv("TILES_CACHE_MAX_BYTES", str(512 * 1024 * 1024)))
+# ---------------- Tiles cache ----------------
 
 @lru_cache(maxsize=1)
 def get_tiles_cache() -> InMemoryTTLCache[object, bytes]:
     return InMemoryTTLCache(
-        ttl_seconds=TILES_CACHE_TTL,
-        max_items=TILES_CACHE_MAX_ITEMS,
-        max_bytes=TILES_CACHE_MAX_BYTES,
+        ttl_seconds=settings.TILES_CACHE_TTL,
+        max_items=settings.TILES_CACHE_MAX_ITEMS,
+        max_bytes=settings.TILES_CACHE_MAX_BYTES,
     )
 
 
-
-
-from app.repos.mongo_jobs_repo import MongoJobsRepository
-from config import settings
+# ---------------- Jobs + Queue ----------------
 
 @lru_cache(maxsize=1)
 def get_jobs_repo() -> MongoJobsRepository:
@@ -142,13 +139,11 @@ def get_tile_build_queue() -> TileBuildQueue:
     return TileBuildQueue(settings.RABBIT_URL)
 
 
-from app.services.tiles_service import TilesService
+# ---------------- Tiles Service ----------------
 
 @lru_cache(maxsize=1)
 def get_tiles_service() -> TilesService:
-    repo = get_tile_repo()
-    cache = get_tiles_cache()
-    return TilesService(repo=repo, cache=cache)
+    return TilesService(repo=get_tile_repo(), cache=get_tiles_cache())
 
 
 # Сервис не выбирает реализацию.

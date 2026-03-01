@@ -4,3 +4,6 @@ python-multipart
 pillow
 pymongo
 minio
+pika
+pytest
+httpx

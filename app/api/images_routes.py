@@ -1,4 +1,4 @@
-# app/api/admin_routes.py
+# app/api/images_routes.py
 
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from app.contracts.image_repository import ImageRepository
 from app.contracts.metadata_repository import MetadataRepository
+from app.domain.images import ImageId
 
 from app.services.original_image_service import OriginalImageService
 from app.services.tile_build_queue import TileBuildQueue
@@ -24,27 +25,25 @@ from app.api.schemas.images import (
     BulkOpResponse,
 )
 
-# ------------------- Ingest (upload + parse + mongo) -------------------
-
 ingest_router = APIRouter(prefix="/ingest", tags=["INGEST = STORAGE + MINIO"])
+storage_router = APIRouter(prefix="/storage", tags=["Storage (MINIO)"])
+meta_router = APIRouter(prefix="/metadata", tags=["Metadata (Mongo)"])
 
 
+# ------------------- Ingest (upload + parse + mongo) -------------------
+# ======== NEW ========
 @ingest_router.post("/images/{storage}/ingest", response_model=IngestResponse)
 def ingest(
     storage: str,
     file: UploadFile = File(...),
     uuid: str | None = Query(default=None, description="Optional UUID for idempotency"),
     on_conflict: str = Query(default="error", pattern="^(error|overwrite|skip)$"),
-):
-    try:
-        svc = get_ingest_service(storage)
-    except Exception:
-        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
-
+    svc = Depends(get_ingest_service),
+):# ======== NEW ========
     try:
         meta = svc.ingest(
             uuid=uuid,
-            on_conflict=on_conflict,  # type: ignore[arg-type]
+            on_conflict=on_conflict,
             filename=file.filename,
             content_type=file.content_type,
             upload_file_stream=file.file,
@@ -72,8 +71,9 @@ def ingest(
         path=meta.path,
     )
 
+
 @ingest_router.delete("/purge", response_model=BulkOpResponse)
-def admin_purge_all(
+def purge_all(
     batch_size: int = Query(1000, ge=1, le=5000),
     svc: OriginalImageService = Depends(get_original_service),
 ):
@@ -88,9 +88,6 @@ def admin_purge_all(
 
 
 # -------------------- STORAGE (original images) Upload only  --------------------
-
-storage_router = APIRouter(prefix="/storage", tags=["Storage (MINIO)"])
-
 
 def stream_minio(resp):
     """Если это MinIO HTTPResponse — надо корректно закрыть. Для fs/mem close сделает StreamingResponse."""
@@ -108,24 +105,14 @@ def stream_minio(resp):
             pass
 
 
-
+# ======== NEW ========
 @storage_router.post("/images/{storage}/upload", response_model=UploadOnlyResponse)
 def upload_only(
     storage: str,
     file: UploadFile = File(...),
     repo: ImageRepository = Depends(get_image_repo),
-):
-    # FastAPI не умеет автоматически прокинуть path-param в Depends без обёртки,
-    # поэтому repo берём вручную:
-    try:
-        repo = get_image_repo(storage)
-    except Exception:
-        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
-
-    from uuid import uuid4
-    from app.domain.images import ImageId
+): # ======== NEW ========
     image_id = ImageId(str(uuid4()))
-
     try:
         loc = repo.upload(image_id, file.file, original_name=file.filename, content_type=file.content_type)
     except Exception as e:
@@ -134,14 +121,14 @@ def upload_only(
     return UploadOnlyResponse(
         uuid=image_id.value,
         uri=loc.uri,
-        storage=loc.storage,  # type: ignore[arg-type] если ругается mypy
+        storage=loc.storage,
         size_bytes=loc.size_bytes,
         content_type=loc.content_type,
     )
 
 
 @storage_router.delete("/{uuid}", response_model=DeleteOneResponse)
-def admin_delete_original_only(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
+def delete_original_only(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
     try:
         svc.delete_storage_only(uuid)
     except FileNotFoundError:
@@ -154,7 +141,7 @@ def admin_delete_original_only(uuid: str, svc: OriginalImageService = Depends(ge
 
 
 @storage_router.delete("", response_model=BulkOpResponse)
-def admin_delete_all_originals_only(
+def delete_all_originals_only(
     svc: OriginalImageService = Depends(get_original_service),
     batch_size: int = Query(1000, ge=1, le=5000),
 ):
@@ -168,8 +155,6 @@ def admin_delete_all_originals_only(
 
 
 # -------------------- METADATA - Meta / Download / Delete (через Mongo) --------------------
-
-meta_router = APIRouter(prefix="/metadata", tags=["Metadata (Mongo)"])
 
 @meta_router.get("/images/{uuid}/meta", response_model=ImageMetadataDTO)
 def get_meta(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
@@ -219,7 +204,7 @@ def download_original(uuid: str, svc: OriginalImageService = Depends(get_origina
 
 
 @meta_router.delete("/{uuid}", response_model=DeleteOneResponse)
-def admin_delete_metadata_only(
+def delete_metadata_only(
     uuid: str,
     meta_repo: MetadataRepository = Depends(get_metadata_repo),
 ):
@@ -235,7 +220,7 @@ def admin_delete_metadata_only(
 
 
 @meta_router.delete("", response_model=BulkOpResponse)
-def admin_delete_all_metadata(
+def delete_all_metadata(
     svc: OriginalImageService = Depends(get_original_service),
 ):
     res = svc.bulk_delete_metadata_only()
@@ -254,7 +239,7 @@ def ingest2(
     uuid: str | None = Query(default=None, description="Optional UUID for idempotency"),
     on_conflict: str = Query(default="error", pattern="^(error|overwrite|skip)$"),
 
-    # --- NEW: флаг + параметры билда тайлов ---
+        # ======== NEW ========
     build_tiles: bool = Query(default=False, description="If true — enqueue tiles build job"),
     tiles_tile_size: int = Query(256, description="256 or 512", alias="tiles_tile_size"),
     tiles_fmt: TileFormat = Query("webp", description="webp or png", alias="tiles_fmt"),
@@ -262,12 +247,8 @@ def ingest2(
 
     q: TileBuildQueue = Depends(get_tile_build_queue),
     jobs: MongoJobsRepository = Depends(get_jobs_repo),
-):
-    try:
-        svc = get_ingest_service(storage)
-    except Exception:
-        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
-
+    svc = Depends(get_ingest_service)
+):# ======== NEW ========
     try:
         meta = svc.ingest(
             uuid=uuid,

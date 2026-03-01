@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from PIL import Image
+Image.MAX_IMAGE_PIXELS = None  # полностью отключить защиту
+
 
 from app.domain.tiles import TileManifest, LevelInfo, TileFormat
 from app.contracts.tiles_repository import TilesRepository
@@ -24,7 +26,7 @@ class TilesService:
     - build pyramid + save tiles + manifest
     - read tile (with manifest validation + TTL cache)
     - read manifest
-    - admin deletes + cache invalidation
+    - deletes + cache invalidation
     """
     def __init__(
         self,
@@ -69,6 +71,7 @@ class TilesService:
         manifest_levels: Dict[int, LevelInfo] = {}
 
         for z, lvl_img in enumerate(levels):
+            print("z = ", z)
             tiles_x = math.ceil(lvl_img.width / tile_size)
             tiles_y = math.ceil(lvl_img.height / tile_size)
 
@@ -81,6 +84,7 @@ class TilesService:
             )
 
             for y in range(tiles_y):
+                print("y = ", y)
                 for x in range(tiles_x):
                     left = x * tile_size
                     upper = y * tile_size
@@ -185,6 +189,10 @@ class TilesService:
             raise FileNotFoundError("Tile out of range")
 
         key: TileKey = (uuid, int(z), int(y), int(x), str(fmt))
+        print("CACHE KEY:", key)
+        print("CACHE STATS:", self.cache.stats())
+        import os
+        print("GET pid", os.getpid(), "cache_id", id(self.cache), "key", key)
 
         cached = self.cache.get(key)
         if cached is not None:
@@ -206,7 +214,7 @@ class TilesService:
         self.cache.set(key, data, size=len(data))
         return TileBytes(data=data, media_type="image/webp" if fmt == "webp" else "image/png")
 
-    # -------- admin deletes + cache invalidation --------
+    # -------- deletes + cache invalidation --------
 
     def delete_one_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: Optional[TileFormat] = None) -> TileFormat:
         # infer fmt from manifest if not provided

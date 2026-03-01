@@ -3,34 +3,43 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # mongo
-    # STORAGE_TYPE: str
-    # MONGO_USERNAME: str
-    # MONGO_PASSWORD: str
-    # MONGO_HOST: str
-    # MONGO_PORT: int
-    # MONGODB_DB: str
-    # MONGODB_META_COLLECTION: str
-    # MONGODB_DATASETS_COLLECTION: str
+    # ---------------- Uvicorn ----------------
+    UVICORN_SERVER_HOST: str = "0.0.0.0"
+    UVICORN_SERVER_PORT: int = 28000
 
-    # uvicorn
-    UVICORN_SERVER_HOST: str
-    UVICORN_SERVER_PORT: int
+    # ---------------- App data ----------------
+    DATA_DIR: str = "./data"
 
-    # in-memory image repo
+    # ---------------- Mongo ----------------
+    MONGO_URL: str = "mongodb://localhost:27017"
+    MONGO_DB: str = "images_db"
+    MONGO_COLLECTION: str = "image_metadata"
+
+    # jobs repo (Mongo)
+    MONGO_JOBS_COLLECTION: str = "tile_jobs"
+    MONGO_JOBS_TTL_SECONDS: int = 7 * 24 * 60 * 60  # 7 days
+
+    # ---------------- MinIO / S3 ----------------
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_SECURE: bool = False
+    MINIO_BUCKET: str = "palleon-track"
+
+    # ---------------- In-memory image repo ----------------
     MEM_MAX_BYTES: int = 300 * 1024 * 1024
 
-    # tiles backend
+    # ---------------- Tiles storage backend ----------------
     TILES_BACKEND: str = "s3"  # s3 | fs
     TILES_FS_DIR: str = "./data"
     TILES_BUCKET: str = "palleon-track"
 
-    # tiles cache (TTL)
-    TILES_CACHE_TTL: int = 120  # seconds
+    # ---------------- Tiles cache ----------------
+    TILES_CACHE_TTL: int = 1200000  # seconds
     TILES_CACHE_MAX_ITEMS: int = 50_000
     TILES_CACHE_MAX_BYTES: int = 512 * 1024 * 1024
 
-
+    # ---------------- RabbitMQ ----------------
     RABBIT_URL: str = "amqp://guest:guest@localhost:5672/"
     RABBIT_QUEUE: str = "tile.build"
     RABBIT_RETRY_QUEUE: str = "tile.build.retry"
@@ -38,10 +47,6 @@ class Settings(BaseSettings):
 
     TILE_BUILD_MAX_RETRIES: int = 5
     TILE_BUILD_RETRY_DELAY_MS: int = 10_000
-
-    MONGO_JOBS_COLLECTION: str = "tile_jobs"
-    # сколько хранить jobs в Mongo (секунды)
-    MONGO_JOBS_TTL_SECONDS: int = 7 * 24 * 60 * 60  # 7 days
 
 
     model_config = SettingsConfigDict(

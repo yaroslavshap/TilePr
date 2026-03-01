@@ -1,6 +1,5 @@
 # app/repos/mongo_metadata_repo.py
 
-from __future__ import annotations
 from typing import Optional, Sequence, Tuple, Iterable
 from pymongo.collection import Collection
 from app.domain.metadata import ImageMetadata

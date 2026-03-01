@@ -1,6 +1,5 @@
 # app/repos/fs_tile_repo.py
 
-from __future__ import annotations
 from pathlib import Path
 from typing import Tuple, BinaryIO, Optional
 from app.domain.tiles import TileFormat

@@ -36,3 +36,10 @@ compose-restart: compose-down compose-up compose-logs
 
 compose-logs:
 	docker-compose logs -f
+
+
+compose-rebuild:
+	docker-compose down
+	docker-compose build --no-cache
+	docker-compose up -d
+	docker-compose logs -f
