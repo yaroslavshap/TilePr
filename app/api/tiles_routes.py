@@ -54,6 +54,14 @@ def cache_stats(
         cache=CacheStatsDTO(**stats),
     )
 
+@tiles_router.post("/_cache/reset-metrics")
+def reset_cache_metrics(cache: InMemoryTTLCache[object, bytes] = Depends(get_tiles_cache)):
+    before = cache.stats()
+    cache.reset_metrics()
+    after = cache.stats()
+    return {"before": before, "after": after}
+
+
 # ======== NEW ========
 @tiles_router.delete("/cache")
 def clear_cache1(

@@ -30,21 +30,41 @@ class InMemoryTTLCache(Generic[K, V]):
         self._data: Dict[K, _Entry[V]] = {}
         self._bytes: int = 0
 
+        # ============НОВОЕ==============
+        # metrics
+        self._hits = 0
+        self._misses = 0
+        self._expired = 0
+        self._sets = 0
+        self._evictions = 0
+        # ============НОВОЕ==============
+
     def _now(self) -> float:
         return time.time()
 
-    def _delete(self, key: K) -> None:
+    def reset_metrics(self) -> None:
+        self._hits = 0
+        self._misses = 0
+        self._expired = 0
+        self._sets = 0
+        self._evictions = 0
+
+
+    def _delete(self, key: K, *, evicted: bool = False) -> None:
         e = self._data.pop(key, None)
         if e is not None:
             self._bytes -= e.size
             if self._bytes < 0:
                 self._bytes = 0
+            if evicted:
+                self._evictions += 1
 
     def _purge_expired(self) -> None:
         now = self._now()
         expired = [k for k, e in self._data.items() if e.expires_at <= now]
         for k in expired:
             self._delete(k)
+            self._expired += 1
 
     def _evict_if_needed(self) -> None:
         # сначала уберём протухшее
@@ -63,9 +83,12 @@ class InMemoryTTLCache(Generic[K, V]):
     def get(self, key: K) -> Optional[V]:
         e = self._data.get(key)
         if e is None:
+            self._misses += 1
             return None
         if e.expires_at <= self._now():
             self._delete(key)
+            self._expired += 1
+            self._misses += 1
             return None
         return e.value
 
@@ -87,6 +110,7 @@ class InMemoryTTLCache(Generic[K, V]):
             size=size,
         )
         self._bytes += size
+        self._sets += 1
 
         self._evict_if_needed()
 
@@ -99,10 +123,18 @@ class InMemoryTTLCache(Generic[K, V]):
 
     def stats(self) -> dict:
         self._purge_expired()
+        gets = self._hits + self._misses
+        hit_rate = (self._hits / gets) if gets else 0.0
         return {
             "ttl_seconds": self.ttl_seconds,
             "items": len(self._data),
             "bytes": self._bytes,
             "max_items": self.max_items,
             "max_bytes": self.max_bytes,
+            "hits": self._hits,
+            "misses": self._misses,
+            "expired": self._expired,
+            "sets": self._sets,
+            "evictions": self._evictions,
+            "hit_rate": hit_rate,
         }
