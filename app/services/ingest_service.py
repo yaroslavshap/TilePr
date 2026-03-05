@@ -10,6 +10,7 @@ from app.contracts.image_repository import ImageRepository
 from app.contracts.metadata_repository import MetadataRepository
 from app.domain.images_domain import ImageId, ImageLocation
 from app.domain.metadata_domain import ImageMetadata
+from app.exceptions.usecase_errors import UseCaseValidationError
 from app.utils.image_probe import probe_image
 
 
@@ -80,7 +81,11 @@ class IngestService:
                 tmp.flush()
 
             # 2) Pillow probe
-            props = probe_image(tmp_path)
+            try:
+                props = probe_image(tmp_path)
+            except Exception as e:
+                raise UseCaseValidationError(f"Файл не является корректным изображением: {e}") from e
+
 
             # 3) Upload to storage from temp file
             with open(tmp_path, "rb") as src:
@@ -116,12 +121,11 @@ class IngestService:
             try:
                 self.meta_repo.upsert(meta)
             except Exception as e:
-                # ROLLBACK: удаляем уже загруженный объект, чтобы не было "сирот"
                 try:
                     self.image_repo.delete_by_location(loc, image_id)
                 except Exception:
                     pass
-                raise RuntimeError(f"Metadata upsert failed: {e}")
+                raise
 
             return meta
 

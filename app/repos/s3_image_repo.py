@@ -2,9 +2,10 @@
 
 
 from typing import Optional, BinaryIO, Tuple
-from minio import Minio
+from minio import Minio, S3Error
 
 from app.domain.images_domain import ImageId, ImageLocation
+from app.exceptions.repo_errors import StorageIOError, StorageLocationError
 from app.utils.counting_stream import CountingReader
 
 def _safe_ext(filename: Optional[str]) -> str:
@@ -23,8 +24,11 @@ class S3ImageRepository:
         return "s3"
 
     def ensure_bucket(self) -> None:
-        if not self.client.bucket_exists(self.bucket):
-            self.client.make_bucket(self.bucket)
+        try:
+            if not self.client.bucket_exists(self.bucket):
+                self.client.make_bucket(self.bucket)
+        except Exception as e:
+            raise StorageIOError(f"Не удалось проверить/создать бакет '{self.bucket}': {e}") from e
 
     def _key(self, image_id: ImageId, original_name: Optional[str]) -> str:
         ext = _safe_ext(original_name)
@@ -35,14 +39,17 @@ class S3ImageRepository:
         key = self._key(image_id, original_name)
         cr = CountingReader(src)
 
-        self.client.put_object(
-            self.bucket,
-            key,
-            data=cr,
-            length=-1,
-            part_size=part_size,
-            content_type=content_type or "application/octet-stream",
-        )
+        try:
+            self.client.put_object(
+                self.bucket,
+                key,
+                data=cr,
+                length=-1,
+                part_size=part_size,
+                content_type=content_type or "application/octet-stream",
+            )
+        except Exception as e:
+            raise StorageIOError(f"Не удалось загрузить объект '{key}' в бакет '{self.bucket}': {e}") from e
 
         return ImageLocation(
             uri=f"minio://{self.bucket}/{key}",
@@ -55,13 +62,23 @@ class S3ImageRepository:
 
     def open_by_location(self, loc: ImageLocation) -> Tuple[ImageLocation, BinaryIO]:
         if not loc.bucket or not loc.key:
-            raise FileNotFoundError("S3 location missing bucket/key")
-        resp = self.client.get_object(loc.bucket, loc.key)
+            raise StorageLocationError("Для S3-локации не указаны bucket и/или key")
+        try:
+            resp = self.client.get_object(loc.bucket, loc.key)
+        except S3Error as e:
+            raise StorageIOError(f"Ошибка S3 при чтении объекта {loc.bucket}/{loc.key}: {e}") from e
+        except Exception as e:
+            raise StorageIOError(f"Не удалось прочитать объект {loc.bucket}/{loc.key}: {e}") from e
         return loc, resp
 
     def delete_by_location(self, loc: ImageLocation, image_id: ImageId) -> None:
         if loc.bucket and loc.key:
-            self.client.remove_object(loc.bucket, loc.key)
+            try:
+                self.client.remove_object(loc.bucket, loc.key)
+            except S3Error as e:
+                raise StorageIOError(f"Ошибка S3 при удалении объекта {loc.bucket}/{loc.key}: {e}") from e
+            except Exception as e:
+                raise StorageIOError(f"Не удалось удалить объект {loc.bucket}/{loc.key}: {e}") from e
 
 
 

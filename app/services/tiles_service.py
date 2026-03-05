@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from PIL import Image
+
+from app.exceptions.usecase_errors import UseCaseValidationError, UseCaseNotFoundError
+
 Image.MAX_IMAGE_PIXELS = None  # полностью отключить защиту
 
 
@@ -49,9 +52,9 @@ class TilesService:
         lossless: bool = False,
     ) -> TileManifest:
         if tile_size not in (256, 512):
-            raise ValueError("tile_size must be 256 or 512")
+            raise UseCaseValidationError("Некорректный размер тайла: допустимо 256 или 512")
         if fmt not in ("webp", "png"):
-            raise ValueError("fmt must be webp or png")
+            raise UseCaseValidationError("Некорректный формат тайлов: допустимо 'webp' или 'png'")
 
         # normalize to RGBA (nice padding behavior)
         if image.mode != "RGBA":
@@ -150,7 +153,7 @@ class TilesService:
     def get_manifest_dict(self, uuid: str) -> dict:
         man = self._get_manifest_cached(uuid)
         if not man:
-            raise FileNotFoundError("Manifest not found")
+            raise UseCaseNotFoundError("Манифест тайлов не найден")
         return man
 
     def _get_manifest_cached(self, uuid: str) -> Optional[dict]:
@@ -177,16 +180,16 @@ class TilesService:
     def get_tile_bytes(self, uuid: str, z: int, y: int, x: int) -> TileBytes:
         man = self._get_manifest_cached(uuid)
         if not man:
-            raise FileNotFoundError("Manifest not found")
+            raise UseCaseNotFoundError("Манифест тайлов не найден")
 
         fmt: TileFormat = man["format"]
         levels = man["levels"]
         lvl = levels.get(str(z))
         if not lvl:
-            raise FileNotFoundError("Level not found")
+            raise UseCaseNotFoundError("Уровень тайлов не найден")
 
         if not (0 <= x < int(lvl["tiles_x"]) and 0 <= y < int(lvl["tiles_y"])):
-            raise FileNotFoundError("Tile out of range")
+            raise UseCaseNotFoundError("Тайл вне диапазона")
 
         key: TileKey = (uuid, int(z), int(y), int(x), str(fmt))
         print("CACHE KEY:", key)
@@ -222,7 +225,7 @@ class TilesService:
             man = self.get_manifest_dict(uuid)
             fmt = man["format"]
             if fmt not in ("webp", "png"):
-                raise ValueError("Invalid manifest format")
+                raise UseCaseValidationError("В манифесте указан некорректный формат тайлов")
 
         self.repo.delete_tile(uuid, z, y, x, fmt=fmt)
         self.invalidate_one_tile(uuid, z, y, x, fmt)

@@ -1,6 +1,8 @@
 # main.py
 import uvicorn
 from fastapi import FastAPI
+
+from app.api.exception_handlers.exception_handlers import register_exception_handlers
 from app.api.tiles_routes import tiles_router
 from app.api.images_routes import ingest_router, storage_router, meta_router, images_list_router
 from fastapi.responses import JSONResponse
@@ -14,6 +16,8 @@ class APITile:
     def __init__(self):
 
         self.app = FastAPI(title="TILE PR API", description="API для ...", version="1.0.0") #docs_url=None
+        register_exception_handlers(self.app)
+
         self.register_routes()
 
     def register_routes(self):

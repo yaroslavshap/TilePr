@@ -8,6 +8,7 @@ from minio import Minio
 
 from app.contracts.image_repository import ImageRepository
 from app.contracts.metadata_repository import MetadataRepository
+from app.exceptions.usecase_errors import UseCaseValidationError
 
 from app.repos.fs_image_repo import FileSystemImageRepository
 from app.repos.mem_image_repo import InMemoryImageRepository
@@ -70,7 +71,6 @@ def get_s3_repo() -> ImageRepository:
 
 
 
-# ======== NEW ========
 def resolve_image_repo(storage: str) -> ImageRepository:
     if storage == "fs":
         return get_fs_repo()
@@ -78,23 +78,14 @@ def resolve_image_repo(storage: str) -> ImageRepository:
         return get_mem_repo()
     if storage == "s3":
         return get_s3_repo()
-    raise ValueError("storage must be one of: fs, mem, s3")
+    raise UseCaseValidationError("Некорректный параметр storage: допустимо 'fs', 'mem' или 's3'")
 
 def get_image_repo(storage: str) -> ImageRepository:
-    try:
-        return resolve_image_repo(storage)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
-
+    return resolve_image_repo(storage)
 
 
 def get_ingest_service(storage: str) -> IngestService:
-    try:
-        return IngestService(image_repo=resolve_image_repo(storage), meta_repo=get_metadata_repo())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="storage must be one of: fs, mem, s3")
-# ======== NEW ========
-
+    return IngestService(image_repo=resolve_image_repo(storage), meta_repo=get_metadata_repo())
 
 
 def get_original_service() -> OriginalImageService:

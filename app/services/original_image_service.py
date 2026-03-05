@@ -6,6 +6,7 @@ from app.contracts.metadata_repository import MetadataRepository
 from app.contracts.image_repository import ImageRepository
 from app.domain.images_domain import ImageLocation, ImageId, StorageKind
 from app.domain.metadata_domain import ImageMetadata
+from app.exceptions.usecase_errors import UseCaseNotFoundError
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,7 @@ class OriginalImageService:
     def get_metadata(self, uuid: str) -> ImageMetadata:
         meta = self.meta_repo.get(uuid)
         if not meta:
-            raise FileNotFoundError("metadata not found")
+            raise UseCaseNotFoundError("Метаданные для изображения не найдены")
         return meta
 
     def _location_from_meta(self, meta: ImageMetadata) -> ImageLocation:

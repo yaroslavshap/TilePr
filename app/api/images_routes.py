@@ -31,7 +31,6 @@ meta_router = APIRouter(prefix="/metadata", tags=["Metadata (Mongo)"])
 
 
 # ------------------- Ingest (upload + parse + mongo) -------------------
-# ======== NEW ========
 @ingest_router.post("/images/{storage}/ingest", response_model=IngestResponse)
 def ingest(
     storage: str,
@@ -39,20 +38,14 @@ def ingest(
     uuid: str | None = Query(default=None, description="Optional UUID for idempotency"),
     on_conflict: str = Query(default="error", pattern="^(error|overwrite|skip)$"),
     svc = Depends(get_ingest_service),
-):# ======== NEW ========
-    try:
-        meta = svc.ingest(
-            uuid=uuid,
-            on_conflict=on_conflict,
-            filename=file.filename,
-            content_type=file.content_type,
-            upload_file_stream=file.file,
-        )
-    except FileExistsError as e:
-        # on_conflict=error
-        raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Ingest failed: {e}")
+):
+    meta = svc.ingest(
+        uuid=uuid,
+        on_conflict=on_conflict,
+        filename=file.filename,
+        content_type=file.content_type,
+        upload_file_stream=file.file,
+    )
 
     return IngestResponse(
         uuid=meta.uuid,
@@ -105,18 +98,15 @@ def stream_minio(resp):
             pass
 
 
-# ======== NEW ========
+
 @storage_router.post("/images/{storage}/upload", response_model=UploadOnlyResponse)
 def upload_only(
     storage: str,
     file: UploadFile = File(...),
     repo: ImageRepository = Depends(get_image_repo),
-): # ======== NEW ========
+):
     image_id = ImageId(str(uuid4()))
-    try:
-        loc = repo.upload(image_id, file.file, original_name=file.filename, content_type=file.content_type)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Upload failed: {e}")
+    loc = repo.upload(image_id, file.file, original_name=file.filename, content_type=file.content_type)
 
     return UploadOnlyResponse(
         uuid=image_id.value,
@@ -129,13 +119,7 @@ def upload_only(
 
 @storage_router.delete("/{uuid}", response_model=DeleteOneResponse)
 def delete_original_only(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
-    try:
-        svc.delete_storage_only(uuid)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Metadata not found (cannot locate storage object)")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Storage delete failed: {e}")
-
+    svc.delete_storage_only(uuid)
     return DeleteOneResponse(uuid=uuid, deleted="storage_only")
 
 
@@ -158,10 +142,7 @@ def delete_all_originals_only(
 
 @meta_router.get("/images/{uuid}/meta", response_model=ImageMetadataDTO)
 def get_meta(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
-    try:
-        meta = svc.get_metadata(uuid)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Metadata not found")
+    meta = svc.get_metadata(uuid)
 
     return ImageMetadataDTO(
         uuid=meta.uuid,
@@ -182,10 +163,7 @@ def get_meta(uuid: str, svc: OriginalImageService = Depends(get_original_service
 
 @meta_router.get("/images/{uuid}")
 def download_original(uuid: str, svc: OriginalImageService = Depends(get_original_service)):
-    try:
-        meta, loc, stream = svc.open_original(uuid)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Not found")
+    meta, loc, stream = svc.open_original(uuid)
 
     # fs/mem: можно просто вернуть stream
     if meta.storage in ("fs", "mem"):
@@ -212,10 +190,7 @@ def delete_metadata_only(
     Удаляет только метаданные из Mongo.
     Оригинал в storage НЕ трогает
     """
-    try:
-        meta_repo.delete(uuid)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Metadata delete failed: {e}")
+    meta_repo.delete(uuid)
     return DeleteOneResponse(uuid=uuid, deleted="metadata_only")
 
 

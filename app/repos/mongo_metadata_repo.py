@@ -3,34 +3,54 @@
 from typing import Optional, Sequence, Tuple, Iterable
 from pymongo.collection import Collection
 from app.domain.metadata_domain import ImageMetadata
+from pymongo import errors as pymongo_errors
+from app.exceptions.repo_errors import MetadataDBError, MetadataConflictError, MetadataDataError
 
 class MongoDBMetadataRepository:
     def __init__(self, collection: Collection):
         self.col = collection
-        self.col.create_index("uuid", unique=True)
+        try:
+            self.col.create_index("uuid", unique=True)
+        except pymongo_errors.PyMongoError as e:
+            raise MetadataDBError(f"Не удалось создать индекс для uuid: {e}") from e
+
 
     def upsert(self, meta: ImageMetadata) -> None:
         doc = self._to_doc(meta)
-        self.col.update_one({"uuid": meta.uuid}, {"$set": doc}, upsert=True)
+        try:
+            self.col.update_one({"uuid": meta.uuid}, {"$set": doc}, upsert=True)
+        except pymongo_errors.DuplicateKeyError as e:
+            raise MetadataConflictError(f"Метаданные с uuid уже существуют: {meta.uuid}") from e
+        except pymongo_errors.PyMongoError as e:
+            raise MetadataDBError(f"Ошибка базы данных при сохранении метаданных: {e}") from e
 
     def get(self, uuid: str) -> Optional[ImageMetadata]:
-        doc = self.col.find_one({"uuid": uuid})
+        try:
+            doc = self.col.find_one({"uuid": uuid})
+        except pymongo_errors.PyMongoError as e:
+            raise MetadataDBError(f"Ошибка базы данных при получении метаданных: {e}") from e
         return self._from_doc(doc) if doc else None
 
     def delete(self, uuid: str) -> None:
-        self.col.delete_one({"uuid": uuid})
+        try:
+            self.col.delete_one({"uuid": uuid})
+        except pymongo_errors.PyMongoError as e:
+            raise MetadataDBError(f"Ошибка базы данных при удалении метаданных: {e}") from e
 
     def list(self, *, limit: int, offset: int) -> Tuple[Sequence[ImageMetadata], int]:
         limit = max(1, min(int(limit), 200))
         offset = max(0, int(offset))
+        try:
+            total = self.col.count_documents({})
+            docs = list(
+                self.col.find({})
+                .sort("_id", -1)
+                .skip(offset)
+                .limit(limit)
+            )
+        except pymongo_errors.PyMongoError as e:
+            raise MetadataDBError(f"Ошибка базы данных при получении списка метаданных: {e}") from e
 
-        total = self.col.count_documents({})
-        docs = list(
-            self.col.find({})
-            .sort("_id", -1)
-            .skip(offset)
-            .limit(limit)
-        )
         return [self._from_doc(d) for d in docs], total
 
 
@@ -43,8 +63,12 @@ class MongoDBMetadataRepository:
                 yield u
 
     def delete_all(self) -> int:
-        res = self.col.delete_many({})
-        return int(getattr(res, "deleted_count", 0))
+        try:
+            res = self.col.delete_many({})
+            return int(getattr(res, "deleted_count", 0))
+        except pymongo_errors.PyMongoError as e:
+            raise MetadataDBError(f"Ошибка базы данных при удалении всех метаданных: {e}") from e
+
 
     # --- mappers ---
 

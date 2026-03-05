@@ -91,10 +91,7 @@ def build_tiles(
     """
     Строим пирамиду тайлов + manifest.
     """
-    try:
-        meta, loc, stream = original.open_original(uuid)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Original not found")
+    meta, loc, stream = original.open_original(uuid)
 
     tmp_path = None
     try:
@@ -113,16 +110,13 @@ def build_tiles(
 
         with Image.open(tmp_path) as im:
             im.load()
-            try:
-                manifest = tiles.build_pyramid(
-                    uuid=uuid,
-                    image=im,
-                    tile_size=req.tile_size,
-                    fmt=req.fmt,
-                    lossless=req.lossless,
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+            manifest = tiles.build_pyramid(
+                uuid=uuid,
+                image=im,
+                tile_size=req.tile_size,
+                fmt=req.fmt,
+                lossless=req.lossless,
+            )
 
         return BuildTilesResponse(
             uuid=manifest.uuid,
@@ -137,10 +131,6 @@ def build_tiles(
             },
         )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Build failed: {e}")
     finally:
         try:
             stream.close()
@@ -162,23 +152,14 @@ def get_tile(
     x: int,
     tiles: TilesService = Depends(get_tiles_service),
 ):
-    try:
-        tb = tiles.get_tile_bytes(uuid, z, y, x)
-        return Response(content=tb.data, media_type=tb.media_type)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Tile read failed: {e}")
+    tb = tiles.get_tile_bytes(uuid, z, y, x)
+    return Response(content=tb.data, media_type=tb.media_type)
 
 
 @tiles_router.get("/{uuid}/manifest", response_model=TileManifestDTO)
 def get_manifest(uuid: str, tiles: TilesService = Depends(get_tiles_service)):
-    try:
-        man = tiles.get_manifest_dict(uuid)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Manifest not found")
+    man = tiles.get_manifest_dict(uuid)
 
-    # man is dict JSON -> convert to DTO
     return TileManifestDTO(
         uuid=man["uuid"],
         tile_size=int(man["tile_size"]),
@@ -205,15 +186,7 @@ def delete_one_tile(
     fmt: TileFormat | None = Query(default=None, description="Override format (webp/png). If not set, uses manifest."),
     tiles: TilesService = Depends(get_tiles_service),
 ):
-    try:
-        real_fmt = tiles.delete_one_tile(uuid, z, y, x, fmt=fmt)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Tile delete failed: {e}")
-
+    real_fmt = tiles.delete_one_tile(uuid, z, y, x, fmt=fmt)
     return DeleteOneTileResponse(uuid=uuid, z=z, y=y, x=x, fmt=real_fmt)
 
 @tiles_router.delete("/{uuid}", response_model=DeleteAllTilesResponse)
@@ -221,11 +194,7 @@ def delete_all_tiles(
     uuid: str,
     tiles: TilesService = Depends(get_tiles_service),
 ):
-    try:
-        stats = tiles.delete_all_tiles(uuid)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Bulk delete failed: {e}")
-
+    stats = tiles.delete_all_tiles(uuid)
     return DeleteAllTilesResponse(
         uuid=uuid,
         stats=BulkDeleteStats(deleted=int(stats.get("deleted", 0)), failed=int(stats.get("failed", 0))),
@@ -235,11 +204,7 @@ def delete_all_tiles(
 def delete_all_tiles_global(
     tiles: TilesService = Depends(get_tiles_service),
 ):
-    try:
-        stats = tiles.delete_all_tiles_global()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Global tiles delete failed: {e}")
-
+    stats = tiles.delete_all_tiles_global()
     return DeleteAllTilesGlobalResponse(
         stats=BulkDeleteStats(deleted=int(stats.get("deleted", 0)), failed=int(stats.get("failed", 0))),
     )

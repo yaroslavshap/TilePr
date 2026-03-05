@@ -6,6 +6,8 @@ import shutil
 import os
 
 from app.domain.images_domain import ImageId, ImageLocation
+from app.exceptions.repo_errors import StorageIOError, StorageLocationError, StorageNotFoundError
+
 
 def _safe_ext(filename: Optional[str]) -> str:
     if filename and "." in filename:
@@ -13,6 +15,8 @@ def _safe_ext(filename: Optional[str]) -> str:
         if ext in {"png", "jpg", "jpeg", "webp"}:
             return ext
     return "bin"
+
+
 
 class FileSystemImageRepository:
     def __init__(self, root_dir: str):
@@ -30,17 +34,22 @@ class FileSystemImageRepository:
     def upload(self, image_id: ImageId, src: BinaryIO, *, original_name: Optional[str], content_type: Optional[str],
                chunk_size: int = 1024 * 1024) -> ImageLocation:
         d = self._dir(image_id)
-        d.mkdir(parents=True, exist_ok=True)
-        path = self._path(image_id, original_name)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            path = self._path(image_id, original_name)
 
-        size = 0
-        with open(path, "wb") as out:
-            while True:
-                chunk = src.read(chunk_size)
-                if not chunk:
-                    break
-                size += len(chunk)
-                out.write(chunk)
+            size = 0
+            with open(path, "wb") as out:
+                while True:
+                    chunk = src.read(chunk_size)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    out.write(chunk)
+
+        except OSError as e:
+        # права/диск/прочие FS проблемы
+            raise StorageIOError(f"Ошибка записи файла в файловое хранилище: {e}") from e
 
         return ImageLocation(
             uri=path.resolve().as_uri(),
@@ -52,8 +61,14 @@ class FileSystemImageRepository:
 
     def open_by_location(self, loc: ImageLocation) -> Tuple[ImageLocation, BinaryIO]:
         if not loc.path:
-            raise FileNotFoundError("FS location missing path")
-        f = open(loc.path, "rb")
+            # это не "файл не найден", а неконсистентная мета для fs
+            raise StorageLocationError("В метаданных отсутствует путь к файлу (FS storage)")
+        try:
+            f = open(loc.path, "rb")
+        except FileNotFoundError as e:
+            raise StorageNotFoundError(f"Файл не найден в файловом хранилище: {loc.path}") from e
+        except OSError as e:
+            raise StorageIOError(f"Ошибка открытия файла {loc.path}: {e}") from e
         return loc, f
 
     def delete_by_location(self, loc: ImageLocation, image_id: ImageId) -> None:
@@ -62,10 +77,15 @@ class FileSystemImageRepository:
                 os.remove(loc.path)
             except FileNotFoundError:
                 pass
-        # “красиво” удалим папку uuid целиком
+            except OSError as e:
+                raise StorageIOError(f"Ошибка удаления файла {loc.path}: {e}") from e
+        #  удалим папку uuid целиком
         d = self._dir(image_id)
         if d.exists():
-            shutil.rmtree(d, ignore_errors=True)
+            try:
+                shutil.rmtree(d, ignore_errors=True)
+            except OSError as e:
+                pass
 
 
 

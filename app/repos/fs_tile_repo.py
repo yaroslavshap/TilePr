@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Tuple, BinaryIO, Optional
 from app.domain.tiles_domain import TileFormat
+from app.exceptions.repo_errors import StorageNotFoundError, StorageIOError
+
 
 class FileSystemTileRepository:
     def __init__(self, root_dir: str):
@@ -22,7 +24,12 @@ class FileSystemTileRepository:
 
     def open_tile(self, uuid: str, z: int, y: int, x: int, *, fmt: TileFormat) -> Tuple[str, BinaryIO]:
         p = self._tile_path(uuid, z, y, x, fmt)
-        f = open(p, "rb")
+        try:
+            f = open(p, "rb")
+        except FileNotFoundError as e:
+            raise StorageNotFoundError(f"Тайл не найден: {p}") from e
+        except OSError as e:
+            raise StorageIOError(f"Не удалось открыть тайл: {p}. Ошибка: {e}") from e
         return p.resolve().as_uri(), f
 
     def put_manifest(self, uuid: str, manifest_json: bytes) -> str:
