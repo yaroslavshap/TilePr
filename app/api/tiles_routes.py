@@ -22,7 +22,7 @@ from app.api.schemas.tiles import (
     DeleteOneTileResponse, DeleteAllTilesResponse, DeleteAllTilesGlobalResponse,
     ClearCacheResponse, BulkDeleteStats,
 )
-from app.domain.tiles import TileFormat
+from app.domain.tiles_domain import TileFormat
 from config import settings
 
 tiles_router = APIRouter(prefix="/tiles", tags=["TILES"])

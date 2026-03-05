@@ -1,9 +1,9 @@
-# app/domain/metadata.py
+# app/domain/metadata_domain.py
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-from app.domain.images import StorageKind
+from app.domain.images_domain import StorageKind
 
 @dataclass(frozen=True)
 class ImageMetadata:

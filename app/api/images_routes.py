@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from app.contracts.image_repository import ImageRepository
 from app.contracts.metadata_repository import MetadataRepository
-from app.domain.images import ImageId
+from app.domain.images_domain import ImageId
 
 from app.services.original_image_service import OriginalImageService
 from app.services.tile_build_queue import TileBuildQueue
@@ -15,7 +15,7 @@ from app.api.deps import get_tile_build_queue, get_jobs_repo, get_original_servi
 from app.api.schemas.images_list import ImageListResponse, ImageListItem
 
 from app.repos.mongo_jobs_repo import MongoJobsRepository
-from app.domain.tiles import TileFormat
+from app.domain.tiles_domain import TileFormat
 
 from app.api.schemas.images import (
     IngestResponse,

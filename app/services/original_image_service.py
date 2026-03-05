@@ -4,8 +4,8 @@ from typing import BinaryIO, Tuple, Callable
 
 from app.contracts.metadata_repository import MetadataRepository
 from app.contracts.image_repository import ImageRepository
-from app.domain.images import ImageLocation, ImageId, StorageKind
-from app.domain.metadata import ImageMetadata
+from app.domain.images_domain import ImageLocation, ImageId, StorageKind
+from app.domain.metadata_domain import ImageMetadata
 
 
 @dataclass(frozen=True)

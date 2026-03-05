@@ -2,7 +2,7 @@
 
 from typing import Optional, Sequence, Tuple, Iterable
 from pymongo.collection import Collection
-from app.domain.metadata import ImageMetadata
+from app.domain.metadata_domain import ImageMetadata
 
 class MongoDBMetadataRepository:
     def __init__(self, collection: Collection):

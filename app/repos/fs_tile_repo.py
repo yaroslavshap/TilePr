@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Tuple, BinaryIO, Optional
-from app.domain.tiles import TileFormat
+from app.domain.tiles_domain import TileFormat
 
 class FileSystemTileRepository:
     def __init__(self, root_dir: str):

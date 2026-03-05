@@ -1,7 +1,7 @@
 # app/contracts/metadata_repository.py
 
 from typing import Protocol, Optional, Sequence, Tuple, Iterable
-from app.domain.metadata import ImageMetadata
+from app.domain.metadata_domain import ImageMetadata
 
 class MetadataRepository(Protocol):
     def upsert(self, meta: ImageMetadata) -> None: ...

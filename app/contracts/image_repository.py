@@ -2,7 +2,7 @@
 
 
 from typing import Protocol, Optional, BinaryIO, Tuple
-from app.domain.images import ImageId, ImageLocation
+from app.domain.images_domain import ImageId, ImageLocation
 
 class ImageRepository(Protocol):
     def storage_kind(self) -> str: ...

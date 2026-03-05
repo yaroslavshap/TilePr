@@ -8,7 +8,7 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = None  # полностью отключить защиту
 
 
-from app.domain.tiles import TileManifest, LevelInfo, TileFormat
+from app.domain.tiles_domain import TileManifest, LevelInfo, TileFormat
 from app.contracts.tiles_repository import TilesRepository
 from app.utils.ttl_cache import InMemoryTTLCache
 

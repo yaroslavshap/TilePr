@@ -23,7 +23,7 @@
 #
 
 from typing import Protocol, BinaryIO, Tuple, Optional
-from app.domain.tiles import TileFormat
+from app.domain.tiles_domain import TileFormat
 
 class TilesRepository(Protocol):
     # tiles

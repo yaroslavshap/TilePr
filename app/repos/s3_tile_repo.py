@@ -4,7 +4,7 @@
 from typing import Tuple, BinaryIO, Optional
 from io import BytesIO
 from minio import Minio, S3Error
-from app.domain.tiles import TileFormat
+from app.domain.tiles_domain import TileFormat
 from minio.deleteobjects import DeleteObject
 
 

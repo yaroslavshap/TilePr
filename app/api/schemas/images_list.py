@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional, Literal, List
 from pydantic import BaseModel
 
-from app.domain.images import StorageKind
+from app.domain.images_domain import StorageKind
 
 
 class ImageListItem(BaseModel):

@@ -1,11 +1,11 @@
-# app/api/schemas/images.py
+# app/api/schemas/images_domain.py
 
 
 from datetime import datetime
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
-from app.domain.images import StorageKind
+from app.domain.images_domain import StorageKind
 
 OnConflict = Literal["error", "overwrite", "skip"]
 

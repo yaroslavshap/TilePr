@@ -4,7 +4,7 @@
 from typing import Optional, BinaryIO, Tuple
 from minio import Minio
 
-from app.domain.images import ImageId, ImageLocation
+from app.domain.images_domain import ImageId, ImageLocation
 from app.utils.counting_stream import CountingReader
 
 def _safe_ext(filename: Optional[str]) -> str:

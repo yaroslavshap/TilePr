@@ -8,8 +8,8 @@ from uuid import uuid4
 
 from app.contracts.image_repository import ImageRepository
 from app.contracts.metadata_repository import MetadataRepository
-from app.domain.images import ImageId, ImageLocation
-from app.domain.metadata import ImageMetadata
+from app.domain.images_domain import ImageId, ImageLocation
+from app.domain.metadata_domain import ImageMetadata
 from app.utils.image_probe import probe_image
 
 

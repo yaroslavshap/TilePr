@@ -4,7 +4,7 @@
 from io import BytesIO
 from typing import Optional, BinaryIO, Tuple
 
-from app.domain.images import ImageId, ImageLocation
+from app.domain.images_domain import ImageId, ImageLocation
 
 class InMemoryImageRepository:
     def __init__(self, max_bytes: int):

@@ -5,7 +5,7 @@ from typing import Optional, BinaryIO, Tuple
 import shutil
 import os
 
-from app.domain.images import ImageId, ImageLocation
+from app.domain.images_domain import ImageId, ImageLocation
 
 def _safe_ext(filename: Optional[str]) -> str:
     if filename and "." in filename:
